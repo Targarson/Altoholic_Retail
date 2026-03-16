@@ -444,24 +444,33 @@ local function AddGlyphOwners(itemID, tooltip)
 	AddonFactory:ReleaseTable(couldLearn)
 end
 
-local function ShowGatheringNodeCounters()
+local function ShowGatheringNodeCounters(nodeName)
 	-- exit if player does not want counters for known gathering nodes
 	if options["ShowGatheringNodesCount"] == false then return end
 
-	-- Get the first tooltip line
-	local line = _G["GameTooltipTextLeft1"]:GetText()
+	-- Get the node name from tooltip data when available, fallback on first tooltip line.
+	local line = nodeName
+	if not line then
+		line = _G["GameTooltipTextLeft1"]:GetText()
+	end
+
 	if not line then return end 	-- may occasionally be nil
-	
+
 	-- The first line is expected to contain the name of the node, but if the player is in altitude, the name
 	-- of the node will be preceded by an arrow pointing down. So attempt to detect the |t closing the texture
-	-- and make a substring of what follows it.
-	local endPos = select(2, line:find("|t", 1))
-	
+	-- and make a substring of what follows it. Some modern tooltip values can be "secret strings" and may throw
+	-- on string conversion, so guard all string operations.
+	local ok, _, endPos = pcall(string.find, line, "|t", 1, true)
+	if not ok then return end
+
 	if endPos then
-		line = line:sub(endPos + 1)
+		ok, line = pcall(string.sub, line, endPos + 1)
+		if not ok then return end
 	end
 	
-	local itemID = LOI:IsGatheringNode(line)
+	local itemID
+	ok, itemID = pcall(LOI.IsGatheringNode, LOI, line)
+	if not ok then return end
 	if not itemID or (itemID == cachedItemID) then return end					-- is the item in the tooltip a known type of gathering node ?
 	
 	if Informant then
@@ -761,10 +770,15 @@ addon:Service("AltoholicUI.Tooltip", { function()
 				end
 			end)
 			
-			local function GameTooltipOnShow(tooltip)
+			local function GameTooltipOnShow(tooltip, data)
 				local name = tooltip:GetName()
 				if name and name:find("GameTooltip") then
-					ShowGatheringNodeCounters()
+					local line
+					if data and data.lines and data.lines[1] then
+						line = data.lines[1].leftText
+					end
+
+					ShowGatheringNodeCounters(line)
 				end
 			end
 			
